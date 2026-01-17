@@ -1,337 +1,356 @@
 'use client'
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/AuthContext';
+import { useRouter } from 'next/navigation';
 import StudentNavbar from '@/components/StudentNavbar';
 import StudentProtectedRoute from '@/components/StudentProtectedRoute';
-import { ref, get, set, increment } from 'firebase/database';
+import { ref, push, set } from 'firebase/database';
 import { db } from '@/lib/firebase';
-import { useAuth } from '@/lib/AuthContext';
 import toast from 'react-hot-toast';
+import { useScrollReveal } from '@/lib/hooks/useScrollReveal';
 
-export default function BiasCheckerPage() {
-  const { user } = useAuth();
-  const [emailText, setEmailText] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState(null);
-  const [checksRemaining, setChecksRemaining] = useState(3);
-  const [todayChecks, setTodayChecks] = useState(0);
-
-  useEffect(() => {
-    if (!user) return;
-    checkRateLimit();
-  }, [user]);
-
-  const checkRateLimit = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const rateLimitRef = ref(db, `rate_limits/${user.uid}/${today}`);
-    
-    try {
-      const snapshot = await get(rateLimitRef);
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        setTodayChecks(data.checks || 0);
-        setChecksRemaining(Math.max(0, 3 - (data.checks || 0)));
-      } else {
-        setTodayChecks(0);
-        setChecksRemaining(3);
-      }
-    } catch (error) {
-      console.error('Error checking rate limit:', error);
-    }
+// Scroll Reveal Component
+function ScrollReveal({ children, animation = 'fade-up', delay = 0 }) {
+  const [ref, isVisible] = useScrollReveal({ threshold: 0.1, once: true });
+  
+  const animations = {
+    'fade-up': 'translate-y-10 opacity-0',
+    'fade-down': '-translate-y-10 opacity-0',
+    'fade-left': 'translate-x-10 opacity-0',
+    'fade-right': '-translate-x-10 opacity-0',
+    'zoom-in': 'scale-90 opacity-0',
+    'zoom-out': 'scale-110 opacity-0'
   };
 
-  const handleAnalyze = async () => {
-    if (!emailText.trim()) {
-      toast.error('Please paste email content to analyze');
-      return;
-    }
+  return (
+    <div
+      ref={ref}
+      className={`transform transition-all duration-700 ease-out ${
+        isVisible ? 'translate-y-0 translate-x-0 scale-100 opacity-100' : animations[animation]
+      }`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
 
-    if (checksRemaining <= 0) {
-      toast.error('Daily limit reached. Try again tomorrow or submit a report.');
+function BiasCheckerContent() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [fileName, setFileName] = useState('');
+  const [emailText, setEmailText] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!emailText.trim()) {
+      toast.error('Please enter email content');
       return;
     }
 
     setAnalyzing(true);
-    setResult(null);
+    const loadingToast = toast.loading('🤖 Analyzing with Gemini AI...');
 
     try {
-      // Call the analyze API
+      // Analyze with Gemini via API route
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          emailText,
-          quickCheck: true // Flag for lighter analysis
-        }),
+        body: JSON.stringify({ emailText }),
       });
 
       const data = await response.json();
 
-      if (response.ok) {
-        setResult(data);
-        
-        // Update rate limit
-        const today = new Date().toISOString().split('T')[0];
-        const rateLimitRef = ref(db, `rate_limits/${user.uid}/${today}`);
-        await set(rateLimitRef, {
-          checks: todayChecks + 1,
-          lastCheck: new Date().toISOString()
-        });
-        
-        setTodayChecks(prev => prev + 1);
-        setChecksRemaining(prev => prev - 1);
-        
-        toast.success('Analysis complete!');
-      } else {
-        toast.error(data.error || 'Analysis failed');
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Analysis failed');
       }
+
+      const analysis = data.analysis;
+
+      // Save to Firebase under student_uploads
+      const uploadsRef = ref(db, `student_uploads/${user.uid}`);
+      const newUploadRef = push(uploadsRef);
+      
+      const uploadData = {
+        fileName: fileName.trim() || 'Untitled Email',
+        emailText: emailText,
+        timestamp: Date.now(),
+        status: 'completed',
+        analysis: analysis,
+        createdAt: new Date().toISOString(),
+        analyzedAt: new Date().toISOString()
+      };
+
+      await set(newUploadRef, uploadData);
+
+      toast.success(
+        `✅ Analysis complete! ${analysis.biasDetected ? `Found ${analysis.patterns?.length || 0} bias patterns` : 'No bias detected'}`,
+        { id: loadingToast, duration: 5000 }
+      );
+
+      // Redirect to student analysis page
+      setTimeout(() => {
+        router.push(`/student/analysis/${newUploadRef.key}`);
+      }, 1500);
+
     } catch (error) {
       console.error('Analysis error:', error);
-      toast.error('Failed to analyze. Please try again.');
-    } finally {
+      toast.error('Analysis failed. Please try again.', { id: loadingToast });
       setAnalyzing(false);
     }
   };
 
-  const getSeverityColor = (severity) => {
-    switch (severity?.toLowerCase()) {
-      case 'high':
-        return 'bg-red-100 text-red-700 border-red-200';
-      case 'medium':
-        return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'low':
-        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-200';
+  const biasTypes = [
+    { 
+      name: 'Gender Bias', 
+      icon: '👥', 
+      desc: 'Pronouns, gendered language',
+      color: 'text-pink-600'
+    },
+    { 
+      name: 'Department Discrimination', 
+      icon: '🎓', 
+      desc: 'CS/IT preference over other branches',
+      color: 'text-blue-600'
+    },
+    { 
+      name: 'Socioeconomic Bias', 
+      icon: '💰', 
+      desc: 'Hostel, background requirements',
+      color: 'text-orange-600'
+    },
+    { 
+      name: 'Academic Elitism', 
+      icon: '📚', 
+      desc: 'Unrealistic CGPA cutoffs',
+      color: 'text-yellow-600'
+    },
+    { 
+      name: 'Community Indicators', 
+      icon: '🏛️', 
+      desc: 'Caste/religion patterns',
+      color: 'text-green-600'
     }
-  };
-
-  const clearResult = () => {
-    setResult(null);
-    setEmailText('');
-  };
+  ];
 
   return (
-    <StudentProtectedRoute>
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-        <StudentNavbar />
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <StudentNavbar />
+      
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Quick Bias Checker</h1>
-            <p className="text-gray-600">Check any placement email for potential bias patterns</p>
+        {/* Header */}
+        <ScrollReveal animation="fade-down">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl md:text-5xl font-black text-gray-900 mb-3">
+              Quick Bias Checker
+            </h1>
+            <p className="text-lg text-gray-600">
+              Paste your placement email content below. Our AI will analyze it for bias patterns.
+            </p>
           </div>
+        </ScrollReveal>
 
-          {/* Rate Limit Info */}
-          <div className={`rounded-xl p-4 mb-6 flex items-center justify-between ${
-            checksRemaining > 0 
-              ? 'bg-green-50 border border-green-200' 
-              : 'bg-red-50 border border-red-200'
-          }`}>
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{checksRemaining > 0 ? '🔍' : '⏳'}</span>
+        {/* Main Form */}
+        <ScrollReveal animation="zoom-in" delay={100}>
+          <form onSubmit={handleSubmit} className="bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden">
+            
+            {/* Form Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl">
+                  📧
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Email Content</h2>
+                  <p className="text-blue-100 text-sm">Fill in the details below</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Form Body */}
+            <div className="p-8 space-y-6">
+              
+              {/* Email Title Input */}
+              <div className="group">
+                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                  <span>📝</span>
+                  <span>Email Title (Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                  placeholder="e.g., TechCorp Software Engineer Role"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all duration-300 group-hover:border-gray-400 text-gray-900"
+                  disabled={analyzing}
+                />
+              </div>
+
+              {/* Email Content Textarea */}
+              <div className="group">
+                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                  <span>✍️</span>
+                  <span>Email Content *</span>
+                  <span className="ml-auto text-xs text-gray-500 font-normal">
+                    {emailText.length} / 10,000 characters
+                  </span>
+                </label>
+                <textarea
+                  value={emailText}
+                  onChange={(e) => setEmailText(e.target.value)}
+                  placeholder="Paste your placement email content here..."
+                  rows={12}
+                  maxLength={10000}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all duration-300 resize-none group-hover:border-gray-400 font-mono text-sm text-gray-900"
+                  required
+                  disabled={analyzing}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={analyzing || !emailText.trim()}
+                  className="flex-1 group relative px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-xl shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 transition-all duration-300 overflow-hidden"
+                >
+                  {analyzing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Analyzing...</span>
+                    </span>
+                  ) : (
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      🎯 Analyze for Bias
+                      <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </span>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push('/student/dashboard')}
+                  disabled={analyzing}
+                  className="px-8 py-4 bg-white text-gray-700 font-bold rounded-xl border-2 border-gray-300 hover:border-gray-400 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 transition-all duration-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </form>
+        </ScrollReveal>
+
+        {/* What We Analyze Section */}
+        <ScrollReveal animation="fade-up" delay={200}>
+          <div className="mt-8 bg-blue-50 border-2 border-blue-200 rounded-2xl p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xl">ℹ️</span>
+              </div>
               <div>
-                <p className={`font-semibold ${checksRemaining > 0 ? 'text-green-800' : 'text-red-800'}`}>
-                  {checksRemaining > 0 
-                    ? `${checksRemaining} checks remaining today`
-                    : 'Daily limit reached'
-                  }
-                </p>
-                <p className={`text-sm ${checksRemaining > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {checksRemaining > 0 
-                    ? 'Use wisely! For serious concerns, submit a report instead.'
-                    : 'Come back tomorrow or submit an anonymous report.'
-                  }
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  What we analyze:
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Our AI scans for these discrimination patterns using Google Gemini 2.5 Flash
                 </p>
               </div>
             </div>
-            <div className="flex gap-1">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`w-4 h-4 rounded-full ${
-                    i <= checksRemaining ? 'bg-green-500' : 'bg-gray-300'
-                  }`}
-                />
+
+            <div className="grid md:grid-cols-2 gap-3">
+              {biasTypes.map((bias, index) => (
+                <ScrollReveal key={index} animation="fade-right" delay={index * 50}>
+                  <div className="bg-white rounded-xl p-4 border border-blue-100 hover:border-blue-300 hover:shadow-md transition-all duration-300 group">
+                    <div className="flex items-start gap-3">
+                      <div className="text-3xl group-hover:scale-110 transition-transform">
+                        {bias.icon}
+                      </div>
+                      <div className="flex-1">
+                        <div className={`font-bold ${bias.color} mb-1`}>
+                          {bias.name}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {bias.desc}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ScrollReveal>
               ))}
             </div>
           </div>
+        </ScrollReveal>
 
-          {!result ? (
-            /* Input Section */
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <label className="block text-lg font-semibold text-gray-800 mb-3">
-                📧 Paste Email Content
-              </label>
-              <textarea
-                value={emailText}
-                onChange={(e) => setEmailText(e.target.value)}
-                placeholder="Paste the placement email you want to check for bias..."
-                className="w-full h-64 p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none text-gray-700"
-                disabled={checksRemaining <= 0}
-              />
-              
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  {emailText.length} characters
-                </p>
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing || !emailText.trim() || checksRemaining <= 0}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-8 py-3 rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {analyzing ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <span>🔍</span>
-                      Check for Bias
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Results Section */
-            <div className="space-y-6">
-              {/* Result Header */}
-              <div className={`rounded-xl p-6 ${
-                result.biasDetected 
-                  ? 'bg-red-50 border-2 border-red-200' 
-                  : 'bg-green-50 border-2 border-green-200'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-3xl ${
-                      result.biasDetected ? 'bg-red-100' : 'bg-green-100'
-                    }`}>
-                      {result.biasDetected ? '⚠️' : '✅'}
-                    </div>
-                    <div>
-                      <h2 className={`text-2xl font-bold ${
-                        result.biasDetected ? 'text-red-800' : 'text-green-800'
-                      }`}>
-                        {result.biasDetected ? 'Bias Detected' : 'No Bias Detected'}
-                      </h2>
-                      <p className={`${result.biasDetected ? 'text-red-600' : 'text-green-600'}`}>
-                        Confidence: {result.confidence || 85}%
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={clearResult}
-                    className="text-gray-500 hover:text-gray-700 transition"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Bias Patterns */}
-              {result.biasDetected && result.patterns && result.patterns.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-lg font-bold text-gray-800 mb-4">Detected Bias Patterns</h3>
-                  <div className="space-y-4">
-                    {result.patterns.map((pattern, index) => (
-                      <div key={index} className={`rounded-lg p-4 border ${getSeverityColor(pattern.severity)}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold capitalize">
-                            {pattern.type?.replace('_', ' ') || 'Bias Type'}
-                          </span>
-                          <span className="text-sm font-medium px-2 py-1 rounded-full bg-white/50">
-                            {pattern.severity || 'Medium'} Severity
-                          </span>
-                        </div>
-                        {pattern.evidence && (
-                          <p className="text-sm mb-2">
-                            <span className="font-medium">Evidence:</span> "{pattern.evidence}"
-                          </p>
-                        )}
-                        {pattern.reasoning && (
-                          <p className="text-sm opacity-80">{pattern.reasoning}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Recommendation */}
-              {result.biasDetected && (
-                <div className="bg-blue-50 rounded-xl p-5 border border-blue-200">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">💡</span>
-                    <div>
-                      <h3 className="font-semibold text-blue-800">What should you do?</h3>
-                      <p className="text-sm text-blue-700 mt-1">
-                        If you believe this email is genuinely biased and affects placement opportunities, 
-                        consider submitting an anonymous report to the Placement Cell. Your identity will be protected.
-                      </p>
-                      <a
-                        href="/student/report"
-                        className="inline-flex items-center gap-2 mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
-                      >
-                        <span>📝</span>
-                        Submit Anonymous Report
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Check Another */}
-              <div className="flex justify-center">
-                <button
-                  onClick={clearResult}
-                  disabled={checksRemaining <= 0}
-                  className="bg-white border-2 border-gray-300 text-gray-700 px-6 py-3 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-400 transition disabled:opacity-50 flex items-center gap-2"
-                >
-                  <span>🔄</span>
-                  Check Another Email ({checksRemaining} remaining)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Info Section */}
-          <div className="mt-8 bg-gray-50 rounded-xl p-5 border border-gray-200">
-            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <span>ℹ️</span> About Quick Bias Check
-            </h3>
-            <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
+        {/* Tips Section */}
+        <ScrollReveal animation="fade-up" delay={300}>
+          <div className="mt-6 bg-gradient-to-br from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-2xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="text-3xl">💡</div>
               <div>
-                <p className="font-medium text-gray-700 mb-1">What we check for:</p>
-                <ul className="space-y-1">
-                  <li>• Gender-coded language</li>
-                  <li>• Department/branch discrimination</li>
-                  <li>• Unreasonable CGPA requirements</li>
-                  <li>• Socioeconomic barriers</li>
-                  <li>• Community/caste indicators</li>
-                </ul>
-              </div>
-              <div>
-                <p className="font-medium text-gray-700 mb-1">Why 3 checks per day?</p>
-                <ul className="space-y-1">
-                  <li>• Prevents system abuse</li>
-                  <li>• Encourages meaningful use</li>
-                  <li>• For serious concerns, submit a report</li>
-                  <li>• Unlimited reports are always free</li>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Pro Tips:</h3>
+                <ul className="space-y-2 text-sm text-gray-700">
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-600">•</span>
+                    <span>Include the full email subject and body for best results</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-600">•</span>
+                    <span>Analysis typically takes 2-3 seconds</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-600">•</span>
+                    <span>You can analyze up to 10,000 characters at once</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-yellow-600">•</span>
+                    <span>Your identity is 100% protected - analysis is completely anonymous</span>
+                  </li>
                 </ul>
               </div>
             </div>
           </div>
-        </main>
+        </ScrollReveal>
+
+        {/* Quick Links */}
+        <ScrollReveal animation="zoom-in" delay={400}>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <button
+              onClick={() => router.push('/student/report')}
+              className="px-6 py-3 bg-white text-gray-700 font-semibold rounded-xl border-2 border-gray-300 hover:border-red-400 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+            >
+              📝 Submit Report
+            </button>
+            <button
+              onClick={() => router.push('/student/my-reports')}
+              className="px-6 py-3 bg-white text-gray-700 font-semibold rounded-xl border-2 border-gray-300 hover:border-blue-400 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+            >
+              📋 My Reports
+            </button>
+            <button
+              onClick={() => router.push('/student/dashboard')}
+              className="px-6 py-3 bg-white text-gray-700 font-semibold rounded-xl border-2 border-gray-300 hover:border-green-400 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+            >
+              🏠 Dashboard
+            </button>
+          </div>
+        </ScrollReveal>
       </div>
+    </div>
+  );
+}
+
+export default function BiasCheckerPage() {
+  return (
+    <StudentProtectedRoute>
+      <BiasCheckerContent />
     </StudentProtectedRoute>
   );
 }
