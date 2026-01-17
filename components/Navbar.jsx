@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 
 
 export default function Navbar() {
-  const { user, isAuthenticated, isAnonymous, logout, loading } = useAuth();
+  const { user, isAuthenticated, isAnonymous, isAdmin, isStudent, userRole, logout, loading } = useAuth();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -39,12 +39,33 @@ export default function Navbar() {
 
   // Get user display info
   const getUserInfo = () => {
+    if (isAdmin) {
+      return {
+        name: user?.displayName || 'Admin',
+        subtitle: user?.email || 'TPO/Admin Access',
+        avatar: user?.photoURL || '🏛️',
+        color: 'from-blue-500 to-indigo-600',
+        role: 'Admin'
+      };
+    }
+    
+    if (isStudent) {
+      return {
+        name: 'Anonymous Student',
+        subtitle: 'Protected Identity',
+        avatar: '👤',
+        color: 'from-green-500 to-emerald-600',
+        role: 'Student'
+      };
+    }
+    
     if (isAnonymous) {
       return {
         name: 'Anonymous User',
         subtitle: 'Guest Access',
         avatar: '👤',
-        color: 'from-gray-400 to-gray-600'
+        color: 'from-gray-400 to-gray-600',
+        role: 'Guest'
       };
     }
     
@@ -53,7 +74,8 @@ export default function Navbar() {
         name: user.displayName,
         subtitle: user.email,
         avatar: user.photoURL || user.displayName[0].toUpperCase(),
-        color: 'from-blue-500 to-indigo-600'
+        color: 'from-blue-500 to-indigo-600',
+        role: 'User'
       };
     }
     
@@ -63,7 +85,8 @@ export default function Navbar() {
         name: emailName.charAt(0).toUpperCase() + emailName.slice(1),
         subtitle: user.email,
         avatar: user.email[0].toUpperCase(),
-        color: 'from-purple-500 to-pink-600'
+        color: 'from-purple-500 to-pink-600',
+        role: 'User'
       };
     }
     
@@ -71,7 +94,8 @@ export default function Navbar() {
       name: 'User',
       subtitle: 'Logged In',
       avatar: 'U',
-      color: 'from-green-500 to-teal-600'
+      color: 'from-green-500 to-teal-600',
+      role: 'User'
     };
   };
 
@@ -209,7 +233,7 @@ export default function Navbar() {
                         {userInfo.name}
                       </div>
                       <div className="text-xs text-gray-500 leading-tight">
-                        {isAnonymous ? '🔒 Guest' : '✓ Verified'}
+                        {isAdmin ? '🏛️ Admin/TPO' : isStudent ? '👤 Student' : isAnonymous ? '🔒 Guest' : '✓ Verified'}
                       </div>
                     </div>
                     
@@ -253,7 +277,17 @@ export default function Navbar() {
                         
                         {/* Status Badge */}
                         <div className="flex items-center gap-2">
-                          {isAnonymous ? (
+                          {isAdmin ? (
+                            <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                              <span>🏛️</span>
+                              <span className="font-medium">Admin / TPO</span>
+                            </span>
+                          ) : isStudent ? (
+                            <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                              <span>🔒</span>
+                              <span className="font-medium">Student (Protected)</span>
+                            </span>
+                          ) : isAnonymous ? (
                             <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                               <span>🔒</span>
                               <span className="font-medium">Anonymous Session</span>
