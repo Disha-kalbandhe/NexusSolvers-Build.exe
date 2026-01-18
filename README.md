@@ -354,7 +354,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Built with ❤️ for Fair Campus Placements**
 
-Made for **Google Technologies Hackathon 2025**
+Made for **Build.exe Hackathon 2026**
 
 [⬆ Back to Top](#-biasbreaker)
 
