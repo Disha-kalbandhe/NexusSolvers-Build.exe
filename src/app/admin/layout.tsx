@@ -1,14 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import LoadingSpinner from '@/components/shared/LoadingSpinner';
-import AdminSidebar from '@/components/admin/AdminSidebar';
+import AdminSidebar from '@/src/components/admin/AdminSidebar';
 import { motion } from 'framer-motion';
 
+// Simple loading spinner component
+function LoadingSpinner() {
+  return (
+    <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+  );
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, userRole } = useAuth() as { user: any; loading: boolean; userRole: string | null };
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
@@ -21,27 +27,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!loading && mounted) {
       if (!user) {
-        router.push('/login');
-      } else if (user.role !== 'super_admin' && user.role !== 'college_admin') {
+        router.push('/');
+      } else if (userRole !== 'admin') {
         router.push('/dashboard');
       }
     }
-  }, [user, loading, router, mounted]);
+  }, [user, loading, router, mounted, userRole]);
 
   if (loading || !mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-primary">
-        <LoadingSpinner size="lg" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <LoadingSpinner />
       </div>
     );
   }
 
-  if (!user || (user.role !== 'super_admin' && user.role !== 'college_admin')) {
+  if (!user || userRole !== 'admin') {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary via-primary-light to-primary flex">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50 flex">
       {/* Sidebar */}
       <AdminSidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 

@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { Building2, Plus, Search, Filter } from 'lucide-react';
 import { useState } from 'react';
-import CollegeCard from '@/components/admin/CollegeCard';
+import CollegeCard from '@/src/components/admin/CollegeCard';
 
 export default function CollegesPage() {
   const [searchQuery, setSearchQuery] = useState('');

@@ -2,10 +2,10 @@
 
 import { motion } from 'framer-motion';
 import { Sparkles, TrendingUp, AlertTriangle, Building2, Users } from 'lucide-react';
-import AdminKPICards from '@/components/admin/AdminKPICards';
-import BiasDistributionChart from '@/components/admin/BiasDistributionChart';
-import RecentReportsTable from '@/components/admin/RecentReportsTable';
-import CollegeTrendsChart from '@/components/admin/CollegeTrendsChart';
+import AdminKPICards from './AdminKPICards';
+import BiasDistributionChart from './BiasDistributionChart';
+import RecentReportsTable from './RecentReportsTable';
+import CollegeTrendsChart from './CollegeTrendsChart';
 
 export default function AdminDashboard() {
   return (
