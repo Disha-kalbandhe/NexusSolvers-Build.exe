@@ -344,27 +344,19 @@ export default function Home() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
           >
-            <MagneticButton
+            <Link
               href="/upload"
-              className="group px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300"
+              className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
             >
-              <span className="flex items-center gap-2">
-                Start Analysis
-                <motion.span
-                  animate={{ x: [0, 4, 0] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                >
-                  →
-                </motion.span>
-              </span>
-            </MagneticButton>
+              🚀 Start Analysis →
+            </Link>
 
-            <MagneticButton
+            <Link
               href="/about"
               className="px-8 py-4 bg-white text-gray-700 font-bold rounded-xl shadow-lg border-2 border-gray-200 hover:border-blue-300 hover:shadow-xl transition-all duration-300"
             >
               Learn More
-            </MagneticButton>
+            </Link>
           </motion.div>
 
           {/* Stats */}
