@@ -162,6 +162,12 @@ export default function Navbar() {
                     Reports
                   </Link>
                   <Link
+                    href="/student-reports"
+                    className="text-gray-600 hover:text-red-600 font-medium transition"
+                  >
+                    Student Reports
+                  </Link>
+                  <Link
                     href="/analytics"
                     className="text-gray-600 hover:text-blue-600 font-medium transition"
                   >
@@ -338,6 +344,18 @@ export default function Navbar() {
                             <div className="text-xs text-gray-500">View all insights</div>
                           </div>
                         </Link>
+                        
+                        <Link
+                          href="/student-reports"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <span className="text-xl">�</span>
+                          <div>
+                            <div className="font-medium">Student Reports</div>
+                            <div className="text-xs text-gray-500">Anonymous bias reports</div>
+                          </div>
+                        </Link>
                       </div>
                       
                       {/* Logout Section */}
@@ -381,6 +399,12 @@ export default function Navbar() {
               className="text-sm text-gray-600 hover:text-blue-600 whitespace-nowrap"
             >
               Reports
+            </Link>
+            <Link 
+              href="/student-reports" 
+              className="text-sm text-gray-600 hover:text-blue-600 whitespace-nowrap"
+            >
+              Student Reports
             </Link>
           </div>
         )}
