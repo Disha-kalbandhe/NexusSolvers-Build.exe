@@ -99,7 +99,7 @@ Campus placement emails often contain **hidden discriminatory patterns** that cr
 - Search and filter functionality
 
 ### 🔍 Comparison Tool
-- Side-by-side analysis of two emails
+- Side-by-side analysis of two emailss
 - Difference highlighting
 - Pattern evolution tracking
 - Export comparison reports (Text/CSV)
